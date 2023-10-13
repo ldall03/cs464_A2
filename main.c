@@ -31,9 +31,9 @@ int connect_by_port_id(const char* host, const unsigned short port)
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
     printf("HOST: %s\n", host);
-    info = gethostbyname(host);
+    info = gethostbyname("osiris.ubishops.ca");
     if (info == NULL) {
-        printf("bad info_struct");
+        herror("bad info_struct");
         return -1;
     }
     memcpy(&sin.sin_addr, info->h_addr, info->h_length);
@@ -81,7 +81,7 @@ int send_to_server(char** args, struct shell_state* shell)
         pid = fork();
     }
 
-    char* req = "TRACE HTTP/1.0 Host: http://osiris.ubishops.ca"; // TODO turn args to a string
+    char* req = "TRACE HTTP/1.0 Host: http://osiris.ubishops.ca\n"; // TODO turn args to a string
 
     if (pid <= 0) {
         printf("Socket: %d\n", socket);
@@ -117,15 +117,15 @@ char** split(char* line)
         exit(EXIT_FAILURE);
     }
 
-    if (line[0] == '&') {
-        tokarr[0] = "&";
-        line += 2;
-        tokarr[1] = line;
-        return tokarr;
-    } else if (line[0] != '!') {
-        tokarr[0] = line;
-        return tokarr;
-    }
+    // if (line[0] == '&') {
+    //     tokarr[0] = "&";
+    //     line += 2;
+    //     tokarr[1] = line;
+    //     return tokarr;
+    // } else if (line[0] != '!') {
+    //     tokarr[0] = line;
+    //     return tokarr;
+    // }
 
     token = strtok(line, delimeters);
     while(token != NULL) {
