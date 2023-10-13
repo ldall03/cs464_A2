@@ -30,8 +30,9 @@ int connect_by_port_id(const char* host, const unsigned short port)
 
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
-    printf("HOST: %s\n", host);
-    info = gethostbyname("osiris.ubishops.ca");
+
+    puts(host);
+    info = gethostbyname(host);
     if (info == NULL) {
         herror("bad info_struct");
         return -1;
@@ -59,8 +60,7 @@ int connect_by_port_id(const char* host, const unsigned short port)
 // TODO refoactor later
 int send_to_server(char** args, struct shell_state* shell)
 {
-    printf("%s\n", args[0]);
-
+    puts(args[0]);
     int socket;
     if (!shell->KEEP_ALIVE) {
         socket = connect_by_port_id(shell->HOST, shell->PORT);
@@ -69,11 +69,9 @@ int send_to_server(char** args, struct shell_state* shell)
     }
 
     if (socket == -1) {
-        perror("bad socket");
-        return 0;
+        // Print error
+        return 1;
     }
-
-     
 
     int pid = -1;
     if (strcmp(args[0], "&") == 0) {
@@ -81,7 +79,10 @@ int send_to_server(char** args, struct shell_state* shell)
         pid = fork();
     }
 
-    char* req = "TRACE HTTP/1.0 Host: http://osiris.ubishops.ca\n"; // TODO turn args to a string
+    char* req = "TRACE /HTTP/1.1\n" \
+        "Host: http://osiris.ubishops.ca"; // TODO turn args to a string
+    
+    puts(req);
 
     if (pid <= 0) {
         printf("Socket: %d\n", socket);
@@ -89,7 +90,12 @@ int send_to_server(char** args, struct shell_state* shell)
         send(socket, req, strlen(req), 0);
         const int length = 1024;
         char ans[1024];
-        int n = recv(socket, &ans, 1024, 0);
+        char* ans_ptr = ans;
+        int to_go = length, n = 0;
+        while ((n = recv(socket, ans_ptr, to_go, 0)) > 0) {
+            ans_ptr += n;
+            to_go -= n;
+        }
         printf("%d \n", n);
         printf("%s \n", ans);
         if (!shell->KEEP_ALIVE)
@@ -104,7 +110,7 @@ int send_to_server(char** args, struct shell_state* shell)
     return 1;
 }
 
-char** split(char* line)
+char** split(char* line, int force)
 {
     int bufsize = 64;
     int position = 0;
@@ -117,15 +123,17 @@ char** split(char* line)
         exit(EXIT_FAILURE);
     }
 
-    // if (line[0] == '&') {
-    //     tokarr[0] = "&";
-    //     line += 2;
-    //     tokarr[1] = line;
-    //     return tokarr;
-    // } else if (line[0] != '!') {
-    //     tokarr[0] = line;
-    //     return tokarr;
-    // }
+    if (force) {
+        ; // Do nothing
+    } else if (line[0] == '&') {
+        tokarr[0] = "&";
+        line += 2;
+        tokarr[1] = line;
+        return tokarr;
+    } else if (line[0] != '!') {
+        tokarr[0] = line;
+        return tokarr;
+    }
 
     token = strtok(line, delimeters);
     while(token != NULL) {
@@ -164,16 +172,18 @@ int setup(struct shell_state* shell)
 
     int count = read(file, buffer, buffsize);
 
-    char** tokens = split(buffer);
+    char** tokens = split(buffer, 1);
     int i = 0;
     while (tokens[i] != NULL) {
         if (strcmp(tokens[i], "VSIZE") == 0) {
             shell->VSIZE = atoi(tokens[i+2]);
         } else if (strcmp(tokens[i], "HSIZE") == 0) {
             shell->HSIZE = atoi(tokens[i+2]);
-        } else if (strcmp(tokens[i], "HOST") == 0) {
-            shell->HOST = tokens[i+2];
-        } else if (strcmp(tokens[i], "PORT") == 0) {
+        } else if (strcmp(tokens[i], "RHOST") == 0) {
+            shell->HOST = malloc(sizeof(char) * 100);
+            strcpy(shell->HOST, tokens[i+2]);
+            puts(shell->HOST);
+        } else if (strcmp(tokens[i], "RPORT") == 0) {
             shell->PORT = atoi(tokens[i+2]);
         }
 
@@ -324,7 +334,7 @@ int run_cmd(char** args, struct shell_state* shell)
     if (strcmp(args[0], "!") != 0) {
         // run on server
         send_to_server(args, shell);
-        return 0;
+        return 1;
     }
 
     args++;
@@ -341,11 +351,13 @@ int run_cmd(char** args, struct shell_state* shell)
     if (strcmp(args[0], "keepalive") == 0) {
         shell->KEEP_ALIVE = 1;
         shell->SOCKET = connect_by_port_id(shell->HOST, shell->PORT);
+        return 1;
     }
 
     if (strcmp(args[0], "close") == 0) {
         shell->KEEP_ALIVE = 0;
         close(shell->SOCKET);
+        return 1;
     }
 
     int pid = fork();
@@ -388,7 +400,7 @@ void shell_loop(struct shell_state* shell)
             continue;
         
         // Split line into arguments
-        char** tokens = split(command);
+        char** tokens = split(command, 0);
 
         // Run the command
         return_code = run_cmd(tokens, shell);
@@ -408,6 +420,7 @@ int main(int argc, char** argv)
     // send_to_server(msg, &shell);
     shell_loop(&shell);
 
+    free(shell.HOST);
     return EXIT_SUCCESS;
 }
 
