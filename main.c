@@ -17,7 +17,92 @@ struct shell_state
     int HSIZE;
     char* HOST;
     unsigned short PORT;
+    int KEEP_ALIVE;
+    int SOCKET;
 };
+
+int connect_by_port_id(const char* host, const unsigned short port) 
+{
+    struct hostent* info;
+    struct sockaddr_in sin;
+    const int type = SOCK_STREAM;
+    int sd;
+
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_family = AF_INET;
+    printf("HOST: %s\n", host);
+    info = gethostbyname(host);
+    if (info == NULL) {
+        printf("bad info_struct");
+        return -1;
+    }
+    memcpy(&sin.sin_addr, info->h_addr, info->h_length);
+
+    sin.sin_port = htons(port);
+
+    sd = socket(PF_INET, type, 0);
+    if (sd < 0) {
+        printf("invalid sd");
+        return -1;
+    }
+
+    int rc = connect(sd, (struct sockaddr*)&sin, sizeof(sin));
+    if (rc < 0) {
+        printf("bad connnect");
+        close(sd);
+        return -1;
+    }
+
+    return sd;
+}
+
+// TODO refoactor later
+int send_to_server(char** args, struct shell_state* shell)
+{
+    printf("%s\n", args[0]);
+
+    int socket;
+    if (!shell->KEEP_ALIVE) {
+        socket = connect_by_port_id(shell->HOST, shell->PORT);
+    } else {
+        socket = shell->SOCKET;
+    }
+
+    if (socket == -1) {
+        perror("bad socket");
+        return 0;
+    }
+
+     
+
+    int pid = -1;
+    if (strcmp(args[0], "&") == 0) {
+        args++;
+        pid = fork();
+    }
+
+    char* req = "TRACE HTTP/1.0 Host: http://osiris.ubishops.ca"; // TODO turn args to a string
+
+    if (pid <= 0) {
+        printf("Socket: %d\n", socket);
+        printf("Sending request");
+        send(socket, req, strlen(req), 0);
+        const int length = 1024;
+        char ans[1024];
+        int n = recv(socket, &ans, 1024, 0);
+        printf("%d \n", n);
+        printf("%s \n", ans);
+        if (!shell->KEEP_ALIVE)
+            close(socket);
+    }
+
+    if (pid == 0) {
+        printf("Background task done!\n");
+        exit(EXIT_SUCCESS);
+    }
+
+    return 1;
+}
 
 char** split(char* line)
 {
@@ -32,6 +117,16 @@ char** split(char* line)
         exit(EXIT_FAILURE);
     }
 
+    if (line[0] == '&') {
+        tokarr[0] = "&";
+        line += 2;
+        tokarr[1] = line;
+        return tokarr;
+    } else if (line[0] != '!') {
+        tokarr[0] = line;
+        return tokarr;
+    }
+
     token = strtok(line, delimeters);
     while(token != NULL) {
         tokarr[position++] = token;
@@ -44,7 +139,7 @@ char** split(char* line)
 
 int setup(struct shell_state* shell)
 {
-    int file = open("shconfig", O_RDWR|O_CREAT, 0666);
+    int file = open("shconfig", O_RDWR|O_CREAT|O_APPEND, 0666);
     if (file == -1) {
         perror("[ERROR] (file open)");
         return EXIT_FAILURE;
@@ -72,19 +167,22 @@ int setup(struct shell_state* shell)
     char** tokens = split(buffer);
     int i = 0;
     while (tokens[i] != NULL) {
-        printf("%s ", tokens[i]);
         if (strcmp(tokens[i], "VSIZE") == 0) {
             shell->VSIZE = atoi(tokens[i+2]);
         } else if (strcmp(tokens[i], "HSIZE") == 0) {
             shell->HSIZE = atoi(tokens[i+2]);
+        } else if (strcmp(tokens[i], "HOST") == 0) {
+            shell->HOST = tokens[i+2];
+        } else if (strcmp(tokens[i], "PORT") == 0) {
+            shell->PORT = atoi(tokens[i+2]);
         }
 
         i++;
     }
 
     if (shell->HSIZE == -1) {
-        char buffer[] = "HSIZE = 75 ";
-        if (write(file, buffer, sizeof(buffer)) == -1) {
+        char buffer[] = "HSIZE = 75\n";
+        if (write(file, buffer, sizeof(buffer) - 1) == -1) {
             perror("[ERROR] (writing to file)");
             return EXIT_FAILURE;
         }
@@ -92,16 +190,15 @@ int setup(struct shell_state* shell)
     }
 
     if (shell->VSIZE == -1) {
-        char buffer[] = "VSIZE = 40 ";
-        if (write(file, buffer, sizeof(buffer)) == -1) {
+        char buffer[] = "VSIZE = 40\n";
+        if (write(file, buffer, sizeof(buffer) - 1) == -1) {
             perror("[ERROR] (writing to file)");
             return EXIT_FAILURE;
         }
         shell->VSIZE = 40;
     }
 
-    shell->HOST = "osiris.ubishops.ca";
-    shell->PORT = 80;
+    shell->KEEP_ALIVE = 0;
 
     free(buffer);
     free(tokens);
@@ -226,7 +323,7 @@ int run_cmd(char** args, struct shell_state* shell)
 {
     if (strcmp(args[0], "!") != 0) {
         // run on server
-        printf("== RUNNING ON SERVER ==");
+        send_to_server(args, shell);
         return 0;
     }
 
@@ -239,6 +336,16 @@ int run_cmd(char** args, struct shell_state* shell)
 
     if (strcmp(args[0], "more") == 0) {
         return more_cmd(args[1], shell->VSIZE, shell->HSIZE);
+    }
+
+    if (strcmp(args[0], "keepalive") == 0) {
+        shell->KEEP_ALIVE = 1;
+        shell->SOCKET = connect_by_port_id(shell->HOST, shell->PORT);
+    }
+
+    if (strcmp(args[0], "close") == 0) {
+        shell->KEEP_ALIVE = 0;
+        close(shell->SOCKET);
     }
 
     int pid = fork();
@@ -292,61 +399,14 @@ void shell_loop(struct shell_state* shell)
     } while (return_code);
 }
 
-int connect_by_port_id(const char* host, const unsigned short port) 
-{
-    struct hostent* info;
-    struct sockaddr_in sin;
-    const int type = SOCK_STREAM;
-    int sd;
-
-    memset(&sin, 0, sizeof(sin));
-    sin.sin_family = AF_INET;
-    info = gethostbyname(host);
-    if (info == NULL) return -1;
-    memcpy(&sin.sin_addr, info->h_addr, info->h_length);
-
-    sin.sin_port = htons(port);
-
-    sd = socket(PF_INET, type, 0);
-    if (sd < 0) return -1;
-
-    int rc = connect(sd, (struct sockaddr*)&sin, sizeof(sin));
-    if (rc < 0) {
-        close(sd);
-        return -1;
-    }
-
-    return sd;
-}
-
-// TODO refoactor later
-int send_to_server(char** args, struct shell_state* shell)
-{
-    int socket = connect_by_port_id(shell->HOST, shell->PORT);
-
-    char* req = "TRACE HTTP/1.0 Host: http://osiris.ubishops.ca";
-
-    send(socket, req, strlen(req), 0);
-    const int length = 1024;
-    char ans[1024];
-
-    int n = recv(socket, &ans, 1024, 0);
-    printf("%d \n", n);
-    printf("%s \n", ans);
-
-    close(socket);
-
-    return 0;
-}
-
 int main(int argc, char** argv)
 {
     struct shell_state shell = {-1, -1};
     setup(&shell);
 
     char* msg = "hell world";
-    send_to_server(msg, &shell);
-    // shell_loop(&shell);
+    // send_to_server(msg, &shell);
+    shell_loop(&shell);
 
     return EXIT_SUCCESS;
 }
