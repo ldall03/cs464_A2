@@ -1,6 +1,8 @@
 // Submission by Loic Dallaire
 // Student ID: 002311806
 
+#include <poll.h>
+#include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -43,13 +45,13 @@ int connect_by_port_id(const char* host, const unsigned short port)
 
     sd = socket(PF_INET, type, 0);
     if (sd < 0) {
-        printf("invalid sd");
+        herror("invalid sd");
         return -1;
     }
 
     int rc = connect(sd, (struct sockaddr*)&sin, sizeof(sin));
     if (rc < 0) {
-        printf("bad connnect");
+        herror("bad connnect");
         close(sd);
         return -1;
     }
@@ -57,7 +59,29 @@ int connect_by_port_id(const char* host, const unsigned short port)
     return sd;
 }
 
-// TODO refoactor later
+int recv_bytes(int sock, char* buff, int size, int timeout)
+{
+    struct pollfd fd;
+    fd.fd = sock;
+    fd.events = POLLIN;
+
+    int n = 0;
+    int ret = poll(&fd, 1, timeout);
+    switch (ret) {
+        case -1:
+            break; // Error
+        case 0:
+            break; // Timeout
+        default:
+            while ((n = recv(sock, buff, size, 0)) > 0) {
+                buff += n;
+                size -= n;
+            }
+    }
+
+    return n;
+}
+
 int send_to_server(char** args, struct shell_state* shell)
 {
     puts(args[0]);
@@ -79,24 +103,21 @@ int send_to_server(char** args, struct shell_state* shell)
         pid = fork();
     }
 
-    char* req = "TRACE /HTTP/1.1\n" \
-        "Host: http://osiris.ubishops.ca"; // TODO turn args to a string
+    char* req = "TRACE /HTTP/1.1 \n" \
+        "Host: osiris.ubishops.ca\n";
     
     puts(req);
 
     if (pid <= 0) {
         printf("Socket: %d\n", socket);
-        printf("Sending request");
+        printf("Sending request\n");
         send(socket, req, strlen(req), 0);
         const int length = 1024;
         char ans[1024];
-        char* ans_ptr = ans;
-        int to_go = length, n = 0;
-        while ((n = recv(socket, ans_ptr, to_go, 0)) > 0) {
-            ans_ptr += n;
-            to_go -= n;
-        }
-        printf("%d \n", n);
+        
+        int n = recv_bytes(socket, ans, length, 2000);
+
+        printf("%d bytes recieved \n", n);
         printf("%s \n", ans);
         if (!shell->KEEP_ALIVE)
             close(socket);
