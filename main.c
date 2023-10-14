@@ -115,7 +115,7 @@ int send_to_server(char** args, struct shell_state* shell)
         const int length = 1024;
         char ans[1024];
         
-        int n = recv_bytes(socket, ans, length, 2000);
+        int n = recv_bytes(socket, ans, length, 500);
 
         printf("%d bytes recieved \n", n);
         printf("%s \n", ans);
@@ -200,26 +200,22 @@ int setup(struct shell_state* shell)
     int i = 0;
     while (tokens[i] != NULL) {
         if (strcmp(tokens[i], "VSIZE") == 0) {
-            shell->VSIZE = atoi(tokens[i+2]);
+            shell->VSIZE = atoi(tokens[i+1]);
         } else if (strcmp(tokens[i], "HSIZE") == 0) {
-            shell->HSIZE = atoi(tokens[i+2]);
+            shell->HSIZE = atoi(tokens[i+1]);
         } else if (strcmp(tokens[i], "RHOST") == 0) {
             shell->HOST = malloc(sizeof(char) * 100);   // When taking the string from the file it acts weird and I have no
-            strcpy(shell->HOST, tokens[i+2]);           // idea why, copying it is the only fix we could find            
+            strcpy(shell->HOST, tokens[i+1]);           // idea why, copying it is the only fix we could find            
         } else if (strcmp(tokens[i], "RPORT") == 0) {
-            shell->PORT = atoi(tokens[i+2]);
+            shell->PORT = atoi(tokens[i+1]);
         }
 
         i++;
     }
 
-    if (shell->HOST == NULL || shell->PORT == 0) {
-        printf("Please set a host and a port in the config file\n");
-        exit(EXIT_FAILURE);
-    }
 
     if (shell->HSIZE == -1) {
-        char buffer[] = "HSIZE = 75\n";
+        char buffer[] = "HSIZE 75\n";
         if (write(file, buffer, sizeof(buffer) - 1) == -1) {
             perror("[ERROR] (writing to file)");
             return EXIT_FAILURE;
@@ -228,12 +224,17 @@ int setup(struct shell_state* shell)
     }
 
     if (shell->VSIZE == -1) {
-        char buffer[] = "VSIZE = 40\n";
+        char buffer[] = "VSIZE 40\n";
         if (write(file, buffer, sizeof(buffer) - 1) == -1) {
             perror("[ERROR] (writing to file)");
             return EXIT_FAILURE;
         }
         shell->VSIZE = 40;
+    }
+
+    if (shell->HOST == NULL || shell->PORT == 0) {
+        printf("Please set the RHOST and a RPORT in the config file\n");
+        exit(EXIT_FAILURE);
     }
 
     shell->KEEP_ALIVE = 0;

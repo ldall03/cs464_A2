@@ -1,4 +1,4 @@
-HSIZE = 75
-VSIZE = 40
-RHOST = osiris.ubishops.ca
-RPORT = 80
+HSIZE 75
+VSIZE 40
+RPORT 80
+RHOST osiris.ubishops.ca
