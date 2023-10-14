@@ -110,6 +110,9 @@ int send_to_server(char** args, struct shell_state* shell)
     return 1;
 }
 
+// Special function to split into tokens as needed
+// Keeps the whole line if does not start with !
+// forces to tokenize on space when force == 1
 char** split(char* line, int force)
 {
     int bufsize = 64;
@@ -180,14 +183,18 @@ int setup(struct shell_state* shell)
         } else if (strcmp(tokens[i], "HSIZE") == 0) {
             shell->HSIZE = atoi(tokens[i+2]);
         } else if (strcmp(tokens[i], "RHOST") == 0) {
-            shell->HOST = malloc(sizeof(char) * 100);
-            strcpy(shell->HOST, tokens[i+2]);
-            puts(shell->HOST);
+            shell->HOST = malloc(sizeof(char) * 100);   // When taking the string from the file it acts weird and I have no
+            strcpy(shell->HOST, tokens[i+2]);           // idea why, copying it is the only fix we could find            
         } else if (strcmp(tokens[i], "RPORT") == 0) {
             shell->PORT = atoi(tokens[i+2]);
         }
 
         i++;
+    }
+
+    if (shell->HOST == NULL || shell->PORT == 0) {
+        printf("Please set a host and a port in the config file\n");
+        exit(EXIT_FAILURE);
     }
 
     if (shell->HSIZE == -1) {
